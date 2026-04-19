@@ -1,51 +1,62 @@
 import streamlit as st
-import requests
+import yt_dlp
+import os
 
 
-def is_likely_direct_video_url(url: str) -> bool:
-    url = url.lower()
-    return any(ext in url for ext in [".mp4", ".webm", ".ogg", ".m3u8"])
+def download_mp3(youtube_url: str, output_path: str = "audio.mp3") -> str:
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": "temp_audio.%(ext)s",
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }
+        ],
+        "quiet": True,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(youtube_url, download=True)
+        filename = ydl.prepare_filename(info)
+
+    base, _ = os.path.splitext(filename)
+    mp3_file = base + ".mp3"
+
+    return mp3_file
 
 
-def stream_remote_video(video_url: str) -> None:
-    try:
-        response = requests.get(video_url, timeout=30)
-        response.raise_for_status()
+def main():
+    st.title("YouTube to MP3 Converter")
 
-        content_type = response.headers.get("Content-Type", "").lower()
-        if "video" not in content_type and "application/vnd.apple.mpegurl" not in content_type:
-            st.error(
-                f"This URL did not return video data. Content-Type was: {content_type or 'unknown'}"
-            )
+    url = st.text_input(
+        "Enter YouTube URL",
+        "https://www.youtube.com/watch?v=xojJ8tiEJas",
+    )
+
+    if st.button("Convert to MP3"):
+        if not url:
+            st.warning("Please enter a URL")
             return
 
-        st.video(response.content)
+        with st.spinner("Downloading and converting..."):
+            try:
+                mp3_file = download_mp3(url)
 
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching video: {e}")
+                with open(mp3_file, "rb") as f:
+                    st.audio(f.read(), format="audio/mp3")
 
+                with open(mp3_file, "rb") as f:
+                    st.download_button(
+                        label="Download MP3",
+                        data=f,
+                        file_name="audio.mp3",
+                        mime="audio/mpeg",
+                    )
 
-def main() -> None:
-    st.set_page_config(page_title="Remote Video Player", layout="centered")
-    st.title("Remote Video Player")
-
-    st.write("Paste a direct video file URL, not a webpage URL.")
-
-    default_url = "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
-    video_url = st.text_input("Direct video URL", value=default_url)
-
-    if st.button("Play Video"):
-        video_url = video_url.strip()
-
-        if not video_url:
-            st.warning("Please enter a URL.")
-            return
-
-        if not is_likely_direct_video_url(video_url):
-            st.error("This does not look like a direct video URL. Use a direct .mp4 or similar media link.")
-            return
-
-        stream_remote_video(video_url)
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 
 if __name__ == "__main__":
